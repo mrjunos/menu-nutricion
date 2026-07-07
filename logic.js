@@ -117,6 +117,16 @@ export function resolveMeal(profileData, meal, option, pp, profileId, day) {
   return { items: merged, hints };
 }
 
+// 🎲: activa la opción C, cambia la semilla y limpia los overrides de C de esa comida
+// (si no, las sustituciones previas taparían el re-sorteo y "solo cambia una parte").
+export function shakeMeal(pp, mealId) {
+  pp.activeOption[mealId] = 'C';
+  pp.shakeSeed[mealId] = (pp.shakeSeed[mealId] || 0) + 1;
+  for (const k of Object.keys(pp.overrides)) {
+    if (k.startsWith(`${mealId}.C.`)) delete pp.overrides[k];
+  }
+}
+
 // Aplica una distribución elegida en la UI a la línea `line` (fusionada) de una comida.
 // dist: [{foodId, porciones}] cuya suma == porciones mostradas de la línea (post-delta).
 // Preserva las partes de OTRAS líneas que compartan slot y guarda en términos del día base.

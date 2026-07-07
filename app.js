@@ -1,6 +1,6 @@
 import { FOODS, GROUP_META, findFood, pesajeDe } from './data/foods.js';
 import { PROFILES } from './data/plans.js';
-import { groupNoun, resolveMeal, applyDistribution } from './logic.js';
+import { groupNoun, resolveMeal, applyDistribution, shakeMeal } from './logic.js';
 import * as store from './storage.js';
 
 let prefs = store.loadPrefs();
@@ -365,8 +365,7 @@ document.addEventListener('click', async (e) => {
   else if (a === 'option') { pp.activeOption[el.dataset.meal] = el.dataset.id; store.savePrefs(prefs); render(); }
   else if (a === 'shake') {
     const m = el.dataset.meal;
-    pp.activeOption[m] = 'C';
-    pp.shakeSeed[m] = (pp.shakeSeed[m] || 0) + 1;
+    shakeMeal(pp, m);
     store.savePrefs(prefs); render();
     document.querySelector(`[data-meal="${m}"] .slots`)?.classList.add('shaken');
   }
