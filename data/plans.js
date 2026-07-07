@@ -1,9 +1,12 @@
 // Planes de alimentación — I Daniel Nutrition (27/06/2026).
+// meal.targets = totales por grupo del apartado "Tiempos de comida" del PDF — la medida que gobierna el plan.
 // Cada comida tiene opciones A y B literales del PDF ("Ejemplo de menú" y sus alternativas "O ...").
-// La opción C se genera desde los favoritos usando la estructura de slots de A.
+// La opción C se genera desde los favoritos con un alimento por grupo de `targets`.
 // item: { grupo, porciones, foodId, gramosFijos?, nota? }
 //   gramosFijos: cuando el nutricionista fija una cantidad distinta a porciones×gramos (ej. 40g de aguacate).
-// variants[].deltas: { meal, grupo, delta, hint } — se aplica al slot más grande de ese grupo en la comida.
+// variants[].deltas: { meal, grupo, delta, hint } — se aplica al slot más grande de ese grupo en la comida;
+//   el chip visible se autogenera del delta (±N grupo) y `hint` (sugerencia literal del PDF) queda como tooltip.
+// variants[].skipMeals: comidas que no aplican ese día (ej. pre entreno en descanso).
 
 export const PROFILES = {
   juan: {
@@ -36,9 +39,9 @@ export const PROFILES = {
     meals: [
       {
         id: 'desayuno', label: 'Desayuno',
+        targets: { harinas: 3, sustitutos: 5, grasas: 2 },
         A: [
-          { grupo: 'harinas',    porciones: 2, foodId: 'pan-tajado' },
-          { grupo: 'harinas',    porciones: 1, foodId: 'pan-tajado' },
+          { grupo: 'harinas',    porciones: 3, foodId: 'pan-tajado' },
           { grupo: 'sustitutos', porciones: 4, foodId: 'huevo', nota: 'revueltos en 5g de aceite de oliva' },
           { grupo: 'sustitutos', porciones: 1, foodId: 'jamon-cerdo', nota: 'bajos en grasa' },
           { grupo: 'grasas',     porciones: 1, foodId: 'queso-crema' },
@@ -55,6 +58,7 @@ export const PROFILES = {
       },
       {
         id: 'almuerzo', label: 'Almuerzo',
+        targets: { harinas: 4, carnes: 2, grasas: 2, verduras: 2 },
         A: [
           { grupo: 'carnes',   porciones: 2, foodId: 'res', nota: 'en 5g de aceite de oliva o mantequilla' },
           { grupo: 'harinas',  porciones: 2, foodId: 'arroz-blanco' },
@@ -74,6 +78,7 @@ export const PROFILES = {
       },
       {
         id: 'mediaTarde', label: 'Media tarde',
+        targets: { frutas: 2, harinas: 2, lacteos: 1 },
         A: [
           { grupo: 'lacteos', porciones: 1, foodId: 'yogurt-griego' },
           { grupo: 'harinas', porciones: 2, foodId: 'cereal' },
@@ -87,6 +92,7 @@ export const PROFILES = {
       },
       {
         id: 'cena', label: 'Cena',
+        targets: { harinas: 4, carnes: 2, grasas: 1 },
         A: [
           { grupo: 'carnes',  porciones: 2, foodId: 'res', nota: 'en 5g de aceite de oliva o mantequilla' },
           { grupo: 'harinas', porciones: 4, foodId: 'platano-amarillo', nota: 'cocido o asado' },
@@ -174,6 +180,7 @@ export const PROFILES = {
         ],
       },
       descanso: {
+        skipMeals: ['preEntreno'],
         deltas: [
           { meal: 'desayuno', grupo: 'harinas', delta: -1, hint: '−1 harina del desayuno (22g pan o 55g arepa)' },
           { meal: 'cena',     grupo: 'harinas', delta: -1, hint: '−1 harina de la cena (22g pan o 80g arroz)' },
@@ -183,6 +190,7 @@ export const PROFILES = {
     meals: [
       {
         id: 'preEntreno', label: 'Pre entreno',
+        targets: { harinas: 1, azucares: 1 },
         A: [
           { grupo: 'harinas',  porciones: 1, foodId: 'pan-tajado' },
           { grupo: 'azucares', porciones: 1, foodId: 'miel' },
@@ -194,6 +202,7 @@ export const PROFILES = {
       },
       {
         id: 'desayuno', label: 'Desayuno',
+        targets: { harinas: 2, sustitutos: 3, grasas: 1 },
         A: [
           { grupo: 'harinas',    porciones: 1, foodId: 'arepa-delgada' },
           { grupo: 'harinas',    porciones: 1, foodId: 'pan-tajado' },
@@ -211,6 +220,7 @@ export const PROFILES = {
       },
       {
         id: 'almuerzo', label: 'Almuerzo',
+        targets: { harinas: 2, carnes: 1.5, grasas: 2, verduras: 2 },
         A: [
           { grupo: 'carnes',   porciones: 1.5, foodId: 'pechuga', nota: 'o pescado, en 5ml de aceite' },
           { grupo: 'harinas',  porciones: 2,   foodId: 'arroz-blanco' },
@@ -228,6 +238,7 @@ export const PROFILES = {
       },
       {
         id: 'mediaTarde', label: 'Media tarde',
+        targets: { lacteos: 1, harinas: 1, azucares: 1, frutas: 2 },
         A: [
           { grupo: 'harinas',  porciones: 1, foodId: 'granola', gramosFijos: 30 },
           { grupo: 'frutas',   porciones: 2, foodId: 'banano' },
@@ -243,6 +254,7 @@ export const PROFILES = {
       },
       {
         id: 'cena', label: 'Cena',
+        targets: { harinas: 2, carnes: 1.5, grasas: 1 },
         A: [
           { grupo: 'carnes',  porciones: 1.5, foodId: 'pechuga', nota: 'o pescado, en 5ml de aceite' },
           { grupo: 'harinas', porciones: 2,   foodId: 'arroz-blanco', nota: 'o papa' },
