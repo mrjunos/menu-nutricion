@@ -1,9 +1,12 @@
 import { FOODS, GROUP_META, findFood, pesajeDe } from './data/foods.js';
 import { PROFILES } from './data/plans.js';
+import { groupNoun, resolveMeal, applyDistribution } from './logic.js';
 import * as store from './storage.js';
 
 let prefs = store.loadPrefs();
 let view = 'menu'; // 'menu' | 'info'
+let resolvedCache = {}; // { mealId: { option, items } } — líneas del último render
+let sheetCtx = null;    // { mealId, option, line, mode: 'pick'|'split', split: {foodId: porciones} }
 const $app = document.getElementById('app');
 
 // ---------- helpers ----------
@@ -11,15 +14,7 @@ const $app = document.getElementById('app');
 const PESAJE_LABEL = { crudo: 'se pesa crudo', cocido: 'se pesa cocido', 'tal-cual': 'tal cual' };
 const PESAJE_SHORT = { crudo: 'CRUDO', cocido: 'COCIDO', 'tal-cual': 'TAL CUAL' };
 
-const GROUP_SINGULAR = {
-  harinas: 'harina', leguminosas: 'leguminosa', sustitutos: 'sustituto', carnes: 'carne',
-  lacteos: 'lácteo', frutas: 'fruta', verduras: 'verdura', grasas: 'grasa', nueces: 'nuez', azucares: 'azúcar',
-};
-
-// "1 harina" / "2 harinas" / "1,5 carnes"
-function groupNoun(grupo, n) {
-  return n === 1 ? GROUP_SINGULAR[grupo] : GROUP_META[grupo].label.toLowerCase();
-}
+const today = () => new Date().toISOString().slice(0, 10);
 
 function profilePrefs() { return prefs.perProfile[prefs.activeProfile]; }
 function profile() { return PROFILES[prefs.activeProfile]; }
@@ -40,98 +35,6 @@ function fmtMedida(food, porciones, gramosFijos) {
   if (gramosFijos) return food.medida ? `${food.medida} aprox.` : '';
   if (porciones === 1) return food.medida;
   return `${food.medida} ×${fmtPorciones(porciones)}`;
-}
-
-// PRNG determinístico por día para la opción C
-function mulberry32(seed) {
-  return function () {
-    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function hashStr(s) {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-
-// ---------- cálculo del menú ----------
-
-function candidatesFor(group, pp) {
-  const excluded = new Set(pp.excluded[group] || []);
-  const favs = (pp.favorites[group] || []).filter((id) => !excluded.has(id));
-  if (favs.length) return favs;
-  return FOODS[group].filter((f) => !excluded.has(f.id)).map((f) => f.id);
-}
-
-function buildOptionC(meal, pp) {
-  // un alimento por grupo de meal.targets ("Tiempos de comida"), sorteado entre favoritos
-  const day = new Date().toISOString().slice(0, 10);
-  const extra = pp.shakeSeed[meal.id] || 0;
-  const rnd = mulberry32(hashStr(`${prefs.activeProfile}|${day}|${meal.id}|${extra}`));
-  return Object.entries(meal.targets).map(([grupo, porciones]) => {
-    const pool = candidatesFor(grupo, pp);
-    const foodId = pool[Math.floor(rnd() * pool.length)];
-    return { grupo, porciones, foodId };
-  });
-}
-
-function resolveMeal(meal, option) {
-  const pp = profilePrefs();
-  let items = option === 'C' ? buildOptionC(meal, pp) : (meal[option] || meal.A);
-  // overrides por slot
-  items = items.map((it, i) => {
-    const ov = pp.overrides[`${meal.id}.${option}.${i}`];
-    if (ov && findFood(ov)) {
-      return { grupo: it.grupo, porciones: it.porciones, foodId: ov, nota: it.nota, slotIndex: i };
-    }
-    return { ...it, slotIndex: i };
-  });
-  // deltas del tipo de día
-  const variant = profile().variants?.[pp.dayType];
-  const hints = [];
-  if (variant) {
-    for (const d of variant.deltas) {
-      if (d.meal !== meal.id) continue;
-      const signo = d.delta > 0 ? '+' : '−';
-      hints.push({ text: `${signo}${Math.abs(d.delta)} ${groupNoun(d.grupo, Math.abs(d.delta))}`, title: d.hint });
-      // aplicar al slot más grande de ese grupo
-      let idx = -1, max = -1;
-      items.forEach((it, i) => { if (it.grupo === d.grupo && it.porciones > max) { max = it.porciones; idx = i; } });
-      if (idx >= 0) {
-        const it = items[idx];
-        const nuevo = it.porciones + d.delta;
-        delete it.gramosFijos; // recalcular desde porciones
-        if (nuevo <= 0) items.splice(idx, 1);
-        else it.porciones = nuevo;
-      } else if (d.delta > 0) {
-        const pool = candidatesFor(d.grupo, pp);
-        items.push({ grupo: d.grupo, porciones: d.delta, foodId: pool[0], slotIndex: items.length });
-      }
-    }
-  }
-  // resolver alimentos y calcular gramos por item
-  const resolved = items.map((it) => {
-    const food = findFood(it.foodId) || { id: it.foodId, nombre: it.foodId, gramos: 0, group: it.grupo };
-    const gramos = it.gramosFijos ?? Math.round(food.gramos * it.porciones);
-    return { ...it, food, gramos };
-  });
-  // fusionar items del mismo alimento y grupo (ej. pan 2 + pan 1 → pan 3)
-  const merged = [];
-  for (const it of resolved) {
-    const prev = merged.find((m) => m.foodId === it.foodId && m.grupo === it.grupo);
-    if (prev) {
-      prev.porciones += it.porciones;
-      prev.gramos += it.gramos;
-      prev.slotIndexes.push(it.slotIndex);
-      if (it.nota && !(prev.nota || '').includes(it.nota)) prev.nota = prev.nota ? `${prev.nota} · ${it.nota}` : it.nota;
-    } else {
-      merged.push({ ...it, slotIndexes: [it.slotIndex] });
-    }
-  }
-  return { items: merged, hints };
 }
 
 // ---------- render ----------
@@ -208,9 +111,11 @@ function renderMenu() {
   const p = profile();
   const pp = profilePrefs();
   const skip = new Set(p.variants?.[pp.dayType]?.skipMeals || []);
+  resolvedCache = {};
   return p.meals.filter((meal) => !skip.has(meal.id)).map((meal) => {
     const option = pp.activeOption[meal.id] || 'A';
-    const { items, hints } = resolveMeal(meal, option);
+    const { items, hints } = resolveMeal(p, meal, option, pp, prefs.activeProfile, today());
+    resolvedCache[meal.id] = { option, items };
     const targetsTxt = Object.entries(meal.targets)
       .map(([g, n]) => `${fmtPorciones(n)} ${groupNoun(g, n)}`).join(' · ');
     return `
@@ -227,14 +132,14 @@ function renderMenu() {
         ${prefs.ui.detalle ? `<div class="meal-targets">${targetsTxt}</div>` : ''}
         ${hints.length ? `<div class="hints">${hints.map((h) => `<span class="hint" title="${h.title}">${h.text}</span>`).join('')}</div>` : ''}
         <ul class="slots">
-          ${items.map((it) => renderSlot(meal, option, it)).join('')}
+          ${items.map((it, li) => renderSlot(meal, option, it, li)).join('')}
         </ul>
       </section>
     `;
   }).join('');
 }
 
-function renderSlot(meal, option, it) {
+function renderSlot(meal, option, it, lineIndex) {
   const { food } = it;
   const unidad = food.unidad || 'g';
   const esAprox = it.gramos !== Math.round(food.gramos * it.porciones);
@@ -246,7 +151,7 @@ function renderSlot(meal, option, it) {
       <span>${fmtPorciones(it.porciones)} ${groupNoun(it.grupo, it.porciones)}</span>
     </div>` : '';
   return `
-    <li class="slot" data-action="open-sheet" data-meal="${meal.id}" data-option="${option}" data-slots="${it.slotIndexes.join(',')}" data-group="${it.grupo}" data-porciones="${it.porciones}">
+    <li class="slot" data-action="open-sheet" data-meal="${meal.id}" data-line="${lineIndex}">
       ${icon(food)}
       <div class="slot-main">
         <div class="slot-line"><b class="qty">${it.gramos}${unidad}</b> <span class="fname">${food.nombre}</span></div>
@@ -286,17 +191,44 @@ function renderInfo() {
 
 // ---------- bottom sheet: sustitución ----------
 
-function openSheet({ meal, option, slots, group, porciones }) {
-  const pp = profilePrefs();
+function sheetFoods(group, pp) {
   const favs = pp.favorites[group] || [];
   const excl = pp.excluded[group] || [];
-  const isLeguminosaCombo = group === 'harinas';
-  const foods = [...FOODS[group], ...(isLeguminosaCombo ? FOODS.leguminosas.map((f) => ({ ...f, _grupo: 'leguminosas' })) : [])];
-
+  const foods = [...FOODS[group], ...(group === 'harinas' ? FOODS.leguminosas.map((f) => ({ ...f, _grupo: 'leguminosas' })) : [])];
   const rank = (f) => (excl.includes(f.id) ? 2 : favs.includes(f.id) ? 0 : 1);
   const sorted = [...foods].sort((a, b) => rank(a) - rank(b) || a.nombre.localeCompare(b.nombre, 'es'));
-  const visibles = sorted.filter((f) => rank(f) < 2);
-  const excluidos = sorted.filter((f) => rank(f) === 2);
+  return { favs, excl, visibles: sorted.filter((f) => rank(f) < 2), excluidos: sorted.filter((f) => rank(f) === 2) };
+}
+
+function sheetListHtml() {
+  const pp = profilePrefs();
+  const { line, split, mode } = sheetCtx;
+  const group = line.grupo;
+  const porciones = line.porciones;
+  const { favs, excl, visibles, excluidos } = sheetFoods(group, pp);
+
+  if (mode === 'split') {
+    const step = Number.isInteger(porciones) ? 1 : 0.5;
+    return visibles.map((f) => {
+      const n = split[f.id] || 0;
+      const fWithGroup = { ...f, group: f._grupo || group };
+      return `
+        <li class="sheet-row split ${n ? 'picked' : ''}" data-food="${f.id}">
+          <span class="row-main">
+            ${icon(fWithGroup)}
+            <span class="row-info">
+              <span class="row-line"><b class="qty">${n ? fmtCantidad(f, n) : '—'}</b> ${f.nombre}${f._grupo ? ' <small>(leguminosa)</small>' : ''}</span>
+              <span class="row-sub">${n ? fmtMedida(f, n) : `${f.medida} por porción`}</span>
+            </span>
+          </span>
+          <span class="stepper">
+            <button class="stepbtn" data-action="step" data-food="${f.id}" data-dir="${-step}" ${n <= 0 ? 'disabled' : ''}>−</button>
+            <b>${fmtPorciones(n)}</b>
+            <button class="stepbtn" data-action="step" data-food="${f.id}" data-dir="${step}">+</button>
+          </span>
+        </li>`;
+    }).join('');
+  }
 
   const row = (f) => {
     const fWithGroup = { ...f, group: f._grupo || group };
@@ -315,23 +247,51 @@ function openSheet({ meal, option, slots, group, porciones }) {
         <button class="iconbtn sm danger ${excl.includes(f.id) ? 'on' : ''}" data-action="excl" data-food="${f.id}">${SVG.ban}</button>
       </li>`;
   };
+  return `
+    ${visibles.map(row).join('')}
+    ${excluidos.length ? `
+      <li class="excl-sep"><button class="linkbtn" data-action="toggle-excl">No me gustan (${excluidos.length}) ▾</button></li>
+      <div class="excl-block" hidden>${excluidos.map(row).join('')}</div>` : ''}`;
+}
 
+function sheetFooterHtml() {
+  if (sheetCtx.mode !== 'split') return '';
+  const total = sheetCtx.line.porciones;
+  const suma = Object.values(sheetCtx.split).reduce((s, n) => s + n, 0);
+  const listo = Math.abs(suma - total) < 1e-9;
+  return `
+    <div class="sheet-footer">
+      <span class="suma ${listo ? 'ok' : ''}">Suma ${fmtPorciones(suma)} de ${fmtPorciones(total)}</span>
+      <button class="btn primary" data-action="apply-dist" ${listo ? '' : 'disabled'}>Aplicar</button>
+    </div>`;
+}
+
+function openSheet(animate = true) {
+  const { line, mode } = sheetCtx;
+  const group = line.grupo;
   document.getElementById('sheet-root').innerHTML = `
     <div class="sheet-backdrop" data-action="close-sheet"></div>
-    <div class="sheet" data-meal="${meal}" data-option="${option}" data-slots="${slots}" data-group="${group}" data-porciones="${porciones}">
+    <div class="sheet ${animate ? '' : 'open'}">
       <div class="sheet-grip"></div>
       <div class="sheet-head">
-        <h3>${GROUP_META[group].label} <small>· ${fmtPorciones(porciones)} porcion${porciones === 1 ? '' : 'es'}</small></h3>
-        <button class="iconbtn sm" data-action="close-sheet">${SVG.x}</button>
+        <h3>${GROUP_META[group].label} <small>· ${fmtPorciones(line.porciones)} porcion${line.porciones === 1 ? '' : 'es'}</small></h3>
+        <div class="sheet-head-tools">
+          ${line.porciones > 1 ? `<button class="btn sm-btn ${mode === 'split' ? 'primary' : ''}" data-action="toggle-split">${mode === 'split' ? 'Elegir uno' : '⥂ Repartir'}</button>` : ''}
+          <button class="iconbtn sm" data-action="close-sheet">${SVG.x}</button>
+        </div>
       </div>
-      <ul class="sheet-list">
-        ${visibles.map(row).join('')}
-        ${excluidos.length ? `
-          <li class="excl-sep"><button class="linkbtn" data-action="toggle-excl">No me gustan (${excluidos.length}) ▾</button></li>
-          <div class="excl-block" hidden>${excluidos.map(row).join('')}</div>` : ''}
-      </ul>
+      <ul class="sheet-list">${sheetListHtml()}</ul>
+      ${sheetFooterHtml()}
     </div>`;
-  requestAnimationFrame(() => document.querySelector('.sheet')?.classList.add('open'));
+  if (animate) requestAnimationFrame(() => document.querySelector('.sheet')?.classList.add('open'));
+}
+
+function refreshSheetBody() {
+  const list = document.querySelector('.sheet-list');
+  if (!list) return;
+  list.innerHTML = sheetListHtml();
+  document.querySelector('.sheet-footer')?.remove();
+  document.querySelector('.sheet')?.insertAdjacentHTML('beforeend', sheetFooterHtml());
 }
 
 function closeSheet() {
@@ -411,28 +371,52 @@ document.addEventListener('click', async (e) => {
     document.querySelector(`[data-meal="${m}"] .slots`)?.classList.add('shaken');
   }
   else if (a === 'open-sheet') {
-    const d = el.dataset;
-    openSheet({ meal: d.meal, option: d.option, slots: d.slots, group: d.group, porciones: +d.porciones });
+    const { meal, line } = el.dataset;
+    const cached = resolvedCache[meal];
+    const ln = cached?.items[+line];
+    if (!ln) return;
+    sheetCtx = { mealId: meal, option: cached.option, line: ln, mode: 'pick', split: { [ln.foodId]: ln.porciones } };
+    openSheet();
   }
-  else if (a === 'close-sheet') closeSheet();
+  else if (a === 'close-sheet') { sheetCtx = null; closeSheet(); }
+  else if (a === 'toggle-split') {
+    sheetCtx.mode = sheetCtx.mode === 'split' ? 'pick' : 'split';
+    sheetCtx.split = { [sheetCtx.line.foodId]: sheetCtx.line.porciones };
+    openSheet(false);
+  }
+  else if (a === 'step') {
+    const { food, dir } = el.dataset;
+    const total = sheetCtx.line.porciones;
+    const suma = Object.values(sheetCtx.split).reduce((s, n) => s + n, 0);
+    const delta = +dir;
+    if (delta > 0 && suma + delta > total + 1e-9) return; // no pasarse del total
+    const n = Math.max(0, (sheetCtx.split[food] || 0) + delta);
+    if (n === 0) delete sheetCtx.split[food]; else sheetCtx.split[food] = n;
+    refreshSheetBody();
+  }
+  else if (a === 'apply-dist') {
+    const { mealId, option, line, split } = sheetCtx;
+    const meal = profile().meals.find((m) => m.id === mealId);
+    const dist = Object.entries(split).map(([foodId, porciones]) => ({ foodId, porciones }));
+    applyDistribution(meal, option, line, dist, pp, prefs.activeProfile, today());
+    store.savePrefs(prefs); sheetCtx = null; closeSheet(); render();
+  }
   else if (a === 'settings') openSettings();
   else if (a === 'toggle-excl') {
     const block = document.querySelector('.excl-block');
     if (block) block.hidden = !block.hidden;
   }
   else if (a === 'pick') {
-    const sheet = el.closest('.sheet');
-    const { meal, option, slots } = sheet.dataset;
-    // la línea puede venir de varios slots fusionados: el reemplazo aplica a todos
-    for (const slot of slots.split(',')) pp.overrides[`${meal}.${option}.${slot}`] = el.dataset.food;
-    store.savePrefs(prefs); closeSheet(); render();
+    // reemplazo completo de la línea = distribución de un solo alimento
+    const { mealId, option, line } = sheetCtx;
+    const meal = profile().meals.find((m) => m.id === mealId);
+    applyDistribution(meal, option, line, [{ foodId: el.dataset.food, porciones: line.porciones }], pp, prefs.activeProfile, today());
+    store.savePrefs(prefs); sheetCtx = null; closeSheet(); render();
   }
   else if (a === 'fav' || a === 'excl') {
-    const sheet = el.closest('.sheet');
-    const group = sheet.dataset.group;
     const id = el.dataset.food;
     const food = findFood(id);
-    const realGroup = food?.group || group;
+    const realGroup = food?.group || sheetCtx.line.grupo;
     const list = a === 'fav' ? (pp.favorites[realGroup] ||= []) : (pp.excluded[realGroup] ||= []);
     const i = list.indexOf(id);
     if (i >= 0) list.splice(i, 1); else list.push(id);
@@ -441,9 +425,7 @@ document.addEventListener('click', async (e) => {
       const fi = favs.indexOf(id); if (fi >= 0) favs.splice(fi, 1);
     }
     store.savePrefs(prefs);
-    const d = sheet.dataset;
-    openSheet({ meal: d.meal, option: d.option, slots: d.slots, group: d.group, porciones: +d.porciones });
-    document.querySelector('.sheet')?.classList.add('open');
+    openSheet(false);
   }
   else if (a === 'pesaje') {
     const id = el.dataset.food;

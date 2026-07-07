@@ -417,6 +417,57 @@ main h3 {
 .excl-sep { padding: 10px 0 4px; border-top: 1px solid var(--card-border); }
 .linkbtn { color: var(--text-2); font-size: 13px; }
 
+/* modo repartir */
+.sheet-head-tools { display: flex; align-items: center; gap: 8px; }
+.sm-btn { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
+.sheet-row.split { min-height: 52px; }
+.sheet-row.split:not(.picked) .row-line, .sheet-row.split:not(.picked) img.fi { opacity: .55; }
+.sheet-row.split.picked .qty { color: var(--accent); }
+.stepper {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--chip);
+  border-radius: 12px;
+  padding: 3px;
+}
+.stepper b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+  min-width: 30px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.stepbtn {
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  border-radius: 9px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--card-border);
+}
+.stepbtn:active { transform: scale(.92); }
+.stepbtn:disabled { opacity: .35; }
+.sheet-footer {
+  flex: none;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--card-border);
+  background: var(--sheet);
+}
+.sheet-footer .suma {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.sheet-footer .suma.ok { color: var(--ok); }
+.sheet-footer .btn:disabled { opacity: .45; }
+
 /* ============ Ajustes ============ */
 
 .settings-body { padding: 0 16px 20px; overflow-y: auto; }
