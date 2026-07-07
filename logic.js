@@ -33,13 +33,31 @@ export function candidatesFor(group, pp) {
   return FOODS[group].filter((f) => !excluded.has(f.id)).map((f) => f.id);
 }
 
-// un alimento por grupo de meal.targets ("Tiempos de comida"), sorteado entre favoritos
+// Un alimento por grupo de meal.targets ("Tiempos de comida"), sorteado entre favoritos.
+// Para variedad: si el grupo tiene ≥2 porciones y ≥2 candidatos, 50% de probabilidad
+// de repartir entre 2 alimentos distintos (5 → 4+1 o 3+2; 2 → 1+1; 1,5 → 1+0,5).
 export function buildOptionC(meal, pp, profileId, day) {
   const extra = pp.shakeSeed[meal.id] || 0;
   const rnd = mulberry32(hashStr(`${profileId}|${day}|${meal.id}|${extra}`));
   return Object.entries(meal.targets).map(([grupo, porciones]) => {
     const pool = candidatesFor(grupo, pp);
-    const foodId = pool[Math.floor(rnd() * pool.length)];
+    const i1 = Math.floor(rnd() * pool.length);
+    const foodId = pool[i1];
+    if (porciones > 1 && pool.length >= 2 && rnd() < 0.5) {
+      let i2 = Math.floor(rnd() * (pool.length - 1));
+      if (i2 >= i1) i2++; // segundo alimento distinto del primero
+      const step = Number.isInteger(porciones) ? 1 : 0.5;
+      const cortes = [];
+      for (let k = step; k <= porciones / 2 + 1e-9; k += step) cortes.push(k);
+      const k = cortes[Math.floor(rnd() * cortes.length)];
+      return {
+        grupo, porciones,
+        dist: [
+          { foodId, porciones: porciones - k },
+          { foodId: pool[i2], porciones: k },
+        ],
+      };
+    }
     return { grupo, porciones, foodId };
   });
 }
@@ -63,9 +81,16 @@ export function resolveMeal(profileData, meal, option, pp, profileId, day) {
         items.push({ grupo: it.grupo, porciones: part.porciones, foodId: part.foodId, slotIndex: i });
         asignado += part.porciones;
       }
-      if (asignado < it.porciones) items.push({ ...it, porciones: it.porciones - asignado, slotIndex: i });
+      if (asignado < it.porciones) {
+        items.push({ ...it, foodId: it.foodId ?? it.dist?.[0]?.foodId, dist: undefined, porciones: it.porciones - asignado, slotIndex: i });
+      }
     } else if (typeof ov === 'string' && findFood(ov)) {
       items.push({ grupo: it.grupo, porciones: it.porciones, foodId: ov, nota: it.nota, slotIndex: i });
+    } else if (it.dist) {
+      // split generado por la opción C: una parte por alimento
+      for (const part of it.dist) {
+        items.push({ grupo: it.grupo, porciones: part.porciones, foodId: part.foodId, slotIndex: i });
+      }
     } else {
       items.push({ ...it, slotIndex: i });
     }
@@ -146,7 +171,9 @@ export function applyDistribution(meal, option, line, dist, pp, profileId, day) 
     if (i < 0 || !slots[i]) continue; // item agregado por delta, sin slot base
     const key = `${meal.id}.${option}.${i}`;
     const ov = pp.overrides[key];
-    const others = Array.isArray(ov) ? ov.filter((p) => p.foodId !== line.foodId && p.porciones > 0) : [];
+    // partes de OTRAS líneas en este slot: del override array, o del split default de C
+    const defParts = Array.isArray(ov) ? ov : (!ov && slots[i].dist) ? slots[i].dist : [];
+    const others = defParts.filter((p) => p.foodId !== line.foodId && p.porciones > 0);
     let cap = slots[i].porciones - others.reduce((s, p) => s + p.porciones, 0);
     const mine = [];
     while (cap > 0 && queue.length) {
