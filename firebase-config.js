@@ -1,9 +1,17 @@
-// Config web del proyecto Firebase. Estos valores son públicos por diseño:
-// la seguridad la dan las reglas de Firestore (solo los emails autorizados leen/escriben).
-// Copiar desde: consola Firebase → Project settings → General → Your apps → Web app.
-export const firebaseConfig = {
-  apiKey: 'TODO',
-  authDomain: 'TODO.firebaseapp.com',
-  projectId: 'TODO',
-  appId: 'TODO',
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyC4Nq6eujpPUuHDPJnlQwvC-TA--K--Hck",
+  authDomain: "menu-nutricion.firebaseapp.com",
+  projectId: "menu-nutricion",
+  storageBucket: "menu-nutricion.firebasestorage.app",
+  messagingSenderId: "491570177841",
+  appId: "1:491570177841:web:a0977b19899e7afa30f210"
 };
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
