@@ -229,51 +229,24 @@ export const FOODS = {
   ],
 };
 
-// Favoritos/excluidos iniciales (seed) — EDITABLE A MANO.
+// Favoritos/excluidos iniciales (seed) del perfil demo — EDITABLE A MANO.
 // Solo se aplican la primera vez que se abre la app (cuando no hay preferencias guardadas).
+// Los favoritos reales de cada usuario viven en Firestore y llegan al iniciar sesión.
 export const SEED_PREFS = {
-  juan: {
+  demo: {
     favorites: {
-      harinas: ['arroz-blanco', 'papa-comun', 'pan-tajado', 'platano-amarillo', 'arepa-delgada', 'pastas', 'avena-hojuelas'],
-      sustitutos: ['huevo', 'jamon-cerdo', 'queso-campesino', 'quesito', 'queso-mozzarella'],
-      carnes: ['res', 'pechuga', 'cerdo', 'pescado'],
+      harinas: ['arroz-blanco', 'papa-comun', 'pan-tajado', 'platano-amarillo', 'arepa-delgada', 'avena-hojuelas'],
+      sustitutos: ['huevo', 'queso-campesino', 'quesito'],
+      carnes: ['pechuga', 'res', 'pescado'],
       lacteos: ['yogurt-griego', 'yogurt', 'leche'],
-      frutas: ['banano', 'uvas', 'manzana', 'fresa', 'mango'],
-      verduras: ['zanahoria', 'tomate', 'lechuga-crespa', 'brocoli', 'pepino'],
-      grasas: ['aceite-oliva', 'aguacate', 'queso-crema', 'mantequilla'],
-      nueces: ['mani', 'almendras'],
-      leguminosas: ['frijol-rojo', 'lentejas'],
-      azucares: [],
-    },
-    excluded: {
-      harinas: ['mazamorra'],
-      sustitutos: ['morcilla', 'huevo-codorniz'],
-      carnes: ['higado'],
-      frutas: ['borojo', 'chontaduro'],
-      verduras: ['rabano', 'remolacha'],
-      grasas: ['mayonesa', 'margarina', 'margarina-light'],
-    },
-  },
-  dahiana: {
-    favorites: {
-      harinas: ['pan-tajado', 'arepa-delgada', 'arroz-blanco', 'papa-comun', 'galletas', 'granola', 'avena-hojuelas'],
-      sustitutos: ['huevo', 'quesito', 'queso-campesino', 'jamon-pavo'],
-      carnes: ['pechuga', 'pescado', 'res'],
-      lacteos: ['yogurt-griego', 'yogurt', 'leche'],
-      frutas: ['banano', 'fresa', 'manzana', 'arandanos'],
+      frutas: ['banano', 'manzana', 'fresa'],
       verduras: ['zanahoria', 'tomate', 'lechuga-crespa', 'pepino'],
       grasas: ['aceite-oliva', 'aguacate', 'mantequilla'],
-      nueces: ['almendras'],
+      nueces: ['almendras', 'mani'],
       leguminosas: ['lentejas'],
-      azucares: ['miel', 'mermelada', 'chocolatina'],
+      azucares: [],
     },
-    excluded: {
-      sustitutos: ['morcilla', 'butifarra'],
-      carnes: ['higado', 'alitas'],
-      frutas: ['borojo'],
-      verduras: ['rabano', 'berenjena'],
-      grasas: ['mayonesa', 'crema-agria'],
-    },
+    excluded: {},
   },
 };
 

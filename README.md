@@ -1,13 +1,13 @@
 # Menú · Plan de alimentación
 
-Web mobile-first para consultar los planes de alimentación de Juan y Dahiana (I Daniel Nutrition, 27/06/2026) como un menú del día calculado, en vez de PDFs.
+Web mobile-first para consultar un plan de alimentación por porciones como un menú del día calculado, en vez de PDFs.
 
-- **Menú de hoy resuelto** al abrir, con selector de tipo de día (pesas/running, doble jornada, descanso; natación/5K, bici, 10K…). Las cantidades se recalculan con los deltas del plan.
+- **Menú de hoy resuelto** al abrir, con selector de tipo de día (entreno, doble jornada, descanso…). Las cantidades se recalculan con los deltas del plan.
 - **Opciones A/B/C por comida**: A y B son las del nutricionista; C se sortea entre tus favoritos (botón 🎲 para variar).
 - **Tap en cualquier alimento** → lista de intercambio del grupo con cantidades ya calculadas, favoritos ⭐ y excluidos.
 - **Toggle 👁 detalle**: pesaje (crudo/cocido/tal cual), medidas caseras y porciones.
 - **Colapsar comidas**: tap en el encabezado de una comida (o su flecha) la colapsa para enfocarte en las demás; el estado se recuerda por perfil.
-- **Persistencia sin backend**: localStorage + export/import JSON + sync opcional con GitHub Gist secreto (token con scope `gist`, se pega en Ajustes y vive solo en el navegador).
+- **Dos modos de persistencia**: anónimo (localStorage + export/import JSON, con un plan de ejemplo) y con login de Google (los planes reales y las preferencias viven en Firestore y se sincronizan en tiempo real entre dispositivos autorizados).
 
 ## Correr local
 
@@ -20,21 +20,23 @@ Sin build ni dependencias. Deploy: GitHub Pages sirviendo la raíz de `main`.
 
 ## Cómo funciona la persistencia
 
-**Todo se guarda solo, al instante, en el navegador** (localStorage): favoritos, excluidos, sustituciones, tipo de día, opción A/B/C activa, pesajes corregidos, tema, toggle de detalle y comidas colapsadas. No hay que "guardar" nada. Pero es *por navegador*: si borras datos del sitio o cambias de dispositivo, se pierde — para eso están las dos capas siguientes.
+**Todo se guarda solo, al instante, en el navegador** (localStorage): favoritos, excluidos, sustituciones, tipo de día, opción A/B/C activa, pesajes corregidos, tema, toggle de detalle y comidas colapsadas. No hay que "guardar" nada.
 
-### Respaldo por archivo
-Ajustes (⚙) → **Exportar JSON** descarga un archivo con todas las preferencias; **Importar JSON** lo restaura en cualquier navegador.
+### Modo anónimo
+Sin iniciar sesión la app muestra un **plan de ejemplo** (`data/plans.js`) totalmente funcional. El estado vive solo en el navegador; Ajustes (⚙) → **Exportar/Importar JSON** sirve de respaldo entre navegadores.
 
-### Sync con GitHub Gist (recomendado)
-Guarda las preferencias en un **gist secreto de tu cuenta de GitHub** y las sincroniza entre dispositivos:
+### Con login de Google (Firestore)
+⚙ Ajustes → **Iniciar sesión con Google**. Solo las cuentas autorizadas por las reglas de Firestore pueden leer/escribir; cualquier otra cuenta ve un aviso de "sin acceso". Al entrar:
 
-1. Crea un token en https://github.com/settings/tokens → *Generate new token (classic)* → marca **solo** el scope `gist` → genera y copia el `ghp_...`. (Fine-grained también sirve: permiso de cuenta *Gists: Read and write*.)
-2. En la app: ⚙ Ajustes → pega el token → **Conectar**. La app crea el gist secreto (o reutiliza el existente si ya conectaste otro dispositivo) y desde ahí **cada cambio se sube solo** (~3s después de tocarlo).
-3. En otro dispositivo (ej. el teléfono de Dahiana): abrir la app → ⚙ → pegar **el mismo token** → Conectar. Detecta el gist existente y baja las preferencias; gana siempre la versión más reciente. Las preferencias de ambos perfiles viven en el mismo JSON, así que un solo gist sincroniza a los dos.
-4. **Sincronizar ahora** fuerza una bajada manual (al abrir la app ya lo hace sola). El token vive solo en el localStorage del navegador — nunca en este repo.
+- Se cargan los **planes reales** desde Firestore (no viven en este repo) y las preferencias compartidas.
+- Cada cambio se sube solo (~3s) y llega **en tiempo real** a los demás dispositivos con sesión.
+- El tema, el toggle de detalle y el perfil activo son por dispositivo (no se sincronizan).
+- El SDK de Firebase se carga solo si hay sesión — un visitante anónimo no lo descarga.
+
+La configuración del proyecto está en `firebase-config.js` (valores públicos por diseño; la seguridad son las reglas). El seed inicial de datos se hace una única vez con `seed/seed.html` (carpeta gitignored con los datos reales).
 
 ### ¿Y `SEED_PREFS`?
-`data/foods.js` → `SEED_PREFS` son los favoritos **iniciales**: solo aplican la primera vez que se abre la app en un navegador sin preferencias (ni locales ni de gist). Una vez usas la app, lo que manda es lo guardado — editar el seed no cambia nada en navegadores que ya tienen estado (para eso: ⚙ → Restablecer todo, o marcar favoritos desde la UI, que es lo normal). Las porciones y menús del nutricionista están en `data/plans.js`.
+`data/foods.js` → `SEED_PREFS` son los favoritos **iniciales del perfil de ejemplo**: solo aplican la primera vez que se abre la app en un navegador sin preferencias. Una vez usas la app, lo que manda es lo guardado. Las porciones y menús del plan de ejemplo están en `data/plans.js`.
 
 ## Créditos
 
