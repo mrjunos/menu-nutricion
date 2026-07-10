@@ -1,12 +1,17 @@
 import { FOODS, GROUP_META, findFood, pesajeDe } from './data/foods.js';
-import { PROFILES } from './data/plans.js';
+import { PROFILES as DEMO_PROFILES } from './data/plans.js';
 import { groupNoun, resolveMeal, applyDistribution, shakeMeal } from './logic.js';
 import * as store from './storage.js';
 
+let PROFILES = store.loadPlansCache() || DEMO_PROFILES; // demo, o los planes reales cacheados
 let prefs = store.loadPrefs();
 let view = 'menu'; // 'menu' | 'info'
 let resolvedCache = {}; // { mealId: { option, items } } — líneas del último render
 let sheetCtx = null;    // { mealId, option, line, mode: 'pick'|'split', split: {foodId: porciones} }
+let cloud = null;        // módulo firebase-sync.js (import dinámico)
+let user = null;         // usuario de Google con sesión activa
+let settingsOpen = false;
+let pendingRender = false; // llegó un cambio remoto con un sheet abierto
 const $app = document.getElementById('app');
 
 // ---------- helpers ----------
@@ -16,8 +21,10 @@ const PESAJE_SHORT = { crudo: 'CRUDO', cocido: 'COCIDO', 'tal-cual': 'TAL CUAL' 
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-function profilePrefs() { return prefs.perProfile[prefs.activeProfile]; }
-function profile() { return PROFILES[prefs.activeProfile]; }
+// prefs.activeProfile puede no existir en PROFILES durante la transición demo↔real
+function activeProfileId() { return PROFILES[prefs.activeProfile] ? prefs.activeProfile : Object.keys(PROFILES)[0]; }
+function profilePrefs() { return (prefs.perProfile[activeProfileId()] ||= store.emptyProfilePrefs()); }
+function profile() { return PROFILES[activeProfileId()]; }
 
 function pesajeFinal(food) {
   return prefs.pesajeOverrides[food.id] || pesajeDe(food);
@@ -61,7 +68,8 @@ function icon(food) {
 function render() {
   const p = profile();
   const pp = profilePrefs();
-  document.documentElement.dataset.profile = prefs.activeProfile;
+  if (!p.dayTypes.some((d) => d.id === pp.dayType)) pp.dayType = 'base';
+  document.documentElement.dataset.profile = activeProfileId();
 
   $app.innerHTML = `
     <header class="hdr">
@@ -78,7 +86,7 @@ function render() {
       </div>
       <div class="profile-switch" role="tablist">
         ${Object.entries(PROFILES).map(([id, pr]) => `
-          <button class="pill profile-pill ${id === prefs.activeProfile ? 'active' : ''}" data-action="profile" data-id="${id}">${pr.nombre}</button>
+          <button class="pill profile-pill ${id === activeProfileId() ? 'active' : ''}" data-action="profile" data-id="${id}">${pr.nombre}</button>
         `).join('')}
       </div>
       <div class="daytypes">
@@ -115,7 +123,7 @@ function renderMenu() {
   resolvedCache = {};
   return p.meals.filter((meal) => !skip.has(meal.id)).map((meal) => {
     const option = pp.activeOption[meal.id] || 'A';
-    const { items, hints } = resolveMeal(p, meal, option, pp, prefs.activeProfile, today());
+    const { items, hints } = resolveMeal(p, meal, option, pp, activeProfileId(), today());
     resolvedCache[meal.id] = { option, items };
     const collapsed = !!pp.collapsed[meal.id];
     const targetsTxt = Object.entries(meal.targets)
@@ -300,35 +308,49 @@ function refreshSheetBody() {
 }
 
 function closeSheet() {
+  settingsOpen = false;
   const s = document.querySelector('.sheet');
-  if (!s) return;
+  if (!s) { flushRender(); return; }
   s.classList.remove('open');
-  setTimeout(() => { document.getElementById('sheet-root').innerHTML = ''; }, 220);
+  setTimeout(() => { document.getElementById('sheet-root').innerHTML = ''; flushRender(); }, 220);
+}
+
+// Cambios remotos con un sheet abierto se difieren para no cerrarlo a media edición.
+function requestRender() {
+  if (sheetCtx || settingsOpen) { pendingRender = true; return; }
+  render();
+}
+
+function flushRender() {
+  if (pendingRender) { pendingRender = false; render(); }
 }
 
 // ---------- ajustes ----------
 
 function openSettings() {
-  const g = prefs.gist;
+  settingsOpen = true;
   document.getElementById('sheet-root').innerHTML = `
     <div class="sheet-backdrop" data-action="close-sheet"></div>
     <div class="sheet" id="settings">
       <div class="sheet-grip"></div>
       <div class="sheet-head"><h3>Ajustes</h3><button class="iconbtn sm" data-action="close-sheet">${SVG.x}</button></div>
       <div class="settings-body">
-        <h4>Respaldo local</h4>
-        <div class="btnrow">
-          <button class="btn" data-action="export">Exportar JSON</button>
-          <label class="btn">Importar JSON<input type="file" accept=".json" id="import-file" hidden></label>
-        </div>
-        <h4>Sync con GitHub Gist</h4>
-        <p class="help">Pega un token de GitHub con permiso <code>gist</code>. Tus preferencias se guardan en un gist secreto de tu cuenta y se sincronizan entre dispositivos. <span id="sync-status" class="sync-${store.getSyncStatus()}">${syncLabel()}</span></p>
-        ${g.token
-          ? `<div class="btnrow"><button class="btn" data-action="sync-now">Sincronizar ahora</button><button class="btn danger" data-action="gist-disconnect">Desconectar</button></div>`
-          : `<div class="btnrow token-row"><input type="password" id="gist-token" class="input" placeholder="ghp_... o github_pat_..."><button class="btn primary" data-action="gist-connect">Conectar</button></div>`}
+        <h4>Cuenta</h4>
+        ${user ? `
+          <p class="help">Sesión iniciada como <b>${user.email}</b>. Tus cambios se sincronizan entre dispositivos. <span id="sync-status" class="sync-${store.getSyncStatus()}">${syncLabel()}</span></p>
+          <div class="btnrow"><button class="btn danger" data-action="logout">Cerrar sesión</button></div>
+        ` : `
+          <p class="help">Estás viendo el plan de ejemplo. Inicia sesión con Google para ver el plan real y sincronizar entre dispositivos.</p>
+          <div class="btnrow"><button class="btn primary" data-action="login">Iniciar sesión con Google</button></div>
+          <h4>Respaldo local</h4>
+          <div class="btnrow">
+            <button class="btn" data-action="export">Exportar JSON</button>
+            <label class="btn">Importar JSON<input type="file" accept=".json" id="import-file" hidden></label>
+          </div>
+        `}
         <h4>Peligro</h4>
         <div class="btnrow"><button class="btn danger" data-action="reset">Restablecer todo</button></div>
-        <p class="help">v1 · datos del plan del ${profile().fecha} · hecho con ♥ para Juan y Dahiana</p>
+        <p class="help">v2 · plan del ${profile().fecha} · hecho con ♥</p>
       </div>
     </div>`;
   requestAnimationFrame(() => document.querySelector('.sheet')?.classList.add('open'));
@@ -336,6 +358,31 @@ function openSettings() {
 
 function syncLabel() {
   return { off: 'Sin conectar', syncing: 'Sincronizando…', ok: 'Sincronizado ✓', error: 'Error de sync ✗' }[store.getSyncStatus()];
+}
+
+// ---------- cloud (Firebase, carga perezosa) ----------
+
+async function initCloud() {
+  if (cloud) return cloud;
+  cloud = await import('./firebase-sync.js');
+  cloud.init({
+    getPrefs: () => prefs,
+    onPlans: (profiles) => {
+      PROFILES = profiles;
+      if (!PROFILES[prefs.activeProfile]) { prefs.activeProfile = Object.keys(PROFILES)[0]; store.persistLocal(prefs); }
+    },
+    onRemote: () => requestRender(),
+    onAuth: (u) => {
+      user = u;
+      if (!u) {
+        PROFILES = DEMO_PROFILES;
+        if (!PROFILES[prefs.activeProfile]) { prefs.activeProfile = Object.keys(PROFILES)[0]; store.persistLocal(prefs); }
+      }
+      if (settingsOpen) openSettings();
+      else requestRender();
+    },
+  });
+  return cloud;
 }
 
 // ---------- tema ----------
@@ -407,7 +454,7 @@ document.addEventListener('click', async (e) => {
     const { mealId, option, line, split } = sheetCtx;
     const meal = profile().meals.find((m) => m.id === mealId);
     const dist = Object.entries(split).map(([foodId, porciones]) => ({ foodId, porciones }));
-    applyDistribution(meal, option, line, dist, pp, prefs.activeProfile, today());
+    applyDistribution(meal, option, line, dist, pp, activeProfileId(), today());
     store.savePrefs(prefs); sheetCtx = null; closeSheet(); render();
   }
   else if (a === 'settings') openSettings();
@@ -419,7 +466,7 @@ document.addEventListener('click', async (e) => {
     // reemplazo completo de la línea = distribución de un solo alimento
     const { mealId, option, line } = sheetCtx;
     const meal = profile().meals.find((m) => m.id === mealId);
-    applyDistribution(meal, option, line, [{ foodId: el.dataset.food, porciones: line.porciones }], pp, prefs.activeProfile, today());
+    applyDistribution(meal, option, line, [{ foodId: el.dataset.food, porciones: line.porciones }], pp, activeProfileId(), today());
     store.savePrefs(prefs); sheetCtx = null; closeSheet(); render();
   }
   else if (a === 'fav' || a === 'excl') {
@@ -453,25 +500,20 @@ document.addEventListener('click', async (e) => {
       store.resetAll(); prefs = store.loadPrefs(); closeSheet(); applyTheme(); render();
     }
   }
-  else if (a === 'gist-connect') {
-    const token = document.getElementById('gist-token')?.value.trim();
-    if (!token) return;
+  else if (a === 'login') {
     el.textContent = 'Conectando…'; el.disabled = true;
     try {
-      const r = await store.connectGist(prefs, token);
-      prefs = r.prefs;
-      closeSheet(); applyTheme(); render();
-      openSettings();
+      const fb = await initCloud();
+      if (!fb.isConfigured()) throw new Error('Falta configurar firebase-config.js con los datos del proyecto de Firebase.');
+      await fb.signIn(); // el resto lo hace onAuth (refresca Ajustes y sincroniza)
     } catch (err) {
       alert(err.message);
-      el.textContent = 'Conectar'; el.disabled = false;
     }
+    if (settingsOpen) openSettings();
   }
-  else if (a === 'gist-disconnect') { store.disconnectGist(prefs); closeSheet(); openSettings(); }
-  else if (a === 'sync-now') {
-    const updated = await store.pullFromGist(prefs);
-    if (updated) { prefs = updated; applyTheme(); render(); }
-    closeSheet(); openSettings();
+  else if (a === 'logout') {
+    el.disabled = true;
+    await cloud?.signOutUser(); // onAuth(null) vuelve al demo y refresca
   }
 });
 
@@ -497,6 +539,6 @@ store.setSyncStatusListener(() => {
 
 applyTheme();
 render();
-store.pullFromGist(prefs).then((updated) => {
-  if (updated) { prefs = updated; applyTheme(); render(); }
-});
+// Con sesión previa, cargar Firebase (lazy) y engancharse al tiempo real;
+// el primer paint ya mostró el plan desde el caché local.
+if (store.hasSession()) initCloud();
