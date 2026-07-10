@@ -50,6 +50,7 @@ const SVG = {
   starO: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>',
   ban: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>',
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
 };
 
 function icon(food) {
@@ -116,24 +117,28 @@ function renderMenu() {
     const option = pp.activeOption[meal.id] || 'A';
     const { items, hints } = resolveMeal(p, meal, option, pp, prefs.activeProfile, today());
     resolvedCache[meal.id] = { option, items };
+    const collapsed = !!pp.collapsed[meal.id];
     const targetsTxt = Object.entries(meal.targets)
       .map(([g, n]) => `${fmtPorciones(n)} ${groupNoun(g, n)}`).join(' · ');
     return `
-      <section class="meal card" data-meal="${meal.id}">
-        <div class="meal-head">
+      <section class="meal card ${collapsed ? 'collapsed' : ''}" data-meal="${meal.id}">
+        <div class="meal-head" data-action="toggle-meal" data-meal="${meal.id}">
           <h2>${meal.label}</h2>
           <div class="meal-tools">
             <div class="opts">
               ${['A', 'B', 'C'].map((o) => `<button class="opt ${o === option ? 'active' : ''}" data-action="option" data-meal="${meal.id}" data-id="${o}">${o}</button>`).join('')}
             </div>
             <button class="iconbtn sm" data-action="shake" data-meal="${meal.id}" title="Variar (baraja tus favoritos)">${SVG.dice}</button>
+            <span class="iconbtn sm chev-toggle" title="${collapsed ? 'Expandir' : 'Colapsar'}">${SVG.chevron}</span>
           </div>
         </div>
-        ${prefs.ui.detalle ? `<div class="meal-targets">${targetsTxt}</div>` : ''}
-        ${hints.length ? `<div class="hints">${hints.map((h) => `<span class="hint" title="${h.title}">${h.text}</span>`).join('')}</div>` : ''}
-        <ul class="slots">
-          ${items.map((it, li) => renderSlot(meal, option, it, li)).join('')}
-        </ul>
+        ${collapsed ? '' : `
+          ${prefs.ui.detalle ? `<div class="meal-targets">${targetsTxt}</div>` : ''}
+          ${hints.length ? `<div class="hints">${hints.map((h) => `<span class="hint" title="${h.title}">${h.text}</span>`).join('')}</div>` : ''}
+          <ul class="slots">
+            ${items.map((it, li) => renderSlot(meal, option, it, li)).join('')}
+          </ul>
+        `}
       </section>
     `;
   }).join('');
@@ -363,6 +368,11 @@ document.addEventListener('click', async (e) => {
     store.savePrefs(prefs); applyTheme(); render();
   }
   else if (a === 'option') { pp.activeOption[el.dataset.meal] = el.dataset.id; store.savePrefs(prefs); render(); }
+  else if (a === 'toggle-meal') {
+    const m = el.dataset.meal;
+    pp.collapsed[m] = !pp.collapsed[m];
+    store.savePrefs(prefs); render();
+  }
   else if (a === 'shake') {
     const m = el.dataset.meal;
     shakeMeal(pp, m);

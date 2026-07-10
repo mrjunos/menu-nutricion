@@ -195,7 +195,7 @@ img.fi { width: 34px; height: 34px; flex: none; background: var(--icon-bg); bord
 }
 [data-theme="dark"] .card { backdrop-filter: blur(8px); }
 
-.meal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.meal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
 .meal-head h2 {
   font-family: var(--display);
   font-weight: 700;
@@ -207,6 +207,10 @@ img.fi { width: 34px; height: 34px; flex: none; background: var(--icon-bg); bord
   line-height: 1.05;
 }
 .meal-tools { display: flex; align-items: center; gap: 8px; }
+
+.chev-toggle { transition: transform .18s ease; }
+.meal.collapsed .chev-toggle { transform: rotate(-90deg); }
+.meal.collapsed { padding-bottom: 14px; }
 
 .opts { display: flex; gap: 4px; background: var(--chip); border-radius: 10px; padding: 3px; }
 .opt {

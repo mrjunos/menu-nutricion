@@ -6,6 +6,7 @@ Web mobile-first para consultar los planes de alimentación de Juan y Dahiana (I
 - **Opciones A/B/C por comida**: A y B son las del nutricionista; C se sortea entre tus favoritos (botón 🎲 para variar).
 - **Tap en cualquier alimento** → lista de intercambio del grupo con cantidades ya calculadas, favoritos ⭐ y excluidos.
 - **Toggle 👁 detalle**: pesaje (crudo/cocido/tal cual), medidas caseras y porciones.
+- **Colapsar comidas**: tap en el encabezado de una comida (o su flecha) la colapsa para enfocarte en las demás; el estado se recuerda por perfil.
 - **Persistencia sin backend**: localStorage + export/import JSON + sync opcional con GitHub Gist secreto (token con scope `gist`, se pega en Ajustes y vive solo en el navegador).
 
 ## Correr local
@@ -19,7 +20,7 @@ Sin build ni dependencias. Deploy: GitHub Pages sirviendo la raíz de `main`.
 
 ## Cómo funciona la persistencia
 
-**Todo se guarda solo, al instante, en el navegador** (localStorage): favoritos, excluidos, sustituciones, tipo de día, opción A/B/C activa, pesajes corregidos, tema y toggle de detalle. No hay que "guardar" nada. Pero es *por navegador*: si borras datos del sitio o cambias de dispositivo, se pierde — para eso están las dos capas siguientes.
+**Todo se guarda solo, al instante, en el navegador** (localStorage): favoritos, excluidos, sustituciones, tipo de día, opción A/B/C activa, pesajes corregidos, tema, toggle de detalle y comidas colapsadas. No hay que "guardar" nada. Pero es *por navegador*: si borras datos del sitio o cambias de dispositivo, se pierde — para eso están las dos capas siguientes.
 
 ### Respaldo por archivo
 Ajustes (⚙) → **Exportar JSON** descarga un archivo con todas las preferencias; **Importar JSON** lo restaura en cualquier navegador.

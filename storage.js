@@ -15,6 +15,7 @@ export function defaultPrefs() {
       overrides: {},      // { 'mealId.option.slotIndex': foodId }
       activeOption: {},   // { mealId: 'A'|'B'|'C' }
       shakeSeed: {},      // { mealId: number } — extra para el 🎲
+      collapsed: {},      // { mealId: true } — comidas colapsadas en el menú
     };
   }
   return {
